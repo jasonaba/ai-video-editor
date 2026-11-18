@@ -244,3 +244,83 @@ print(
     f"Duration difference: "
     f"{video_duration - total_cut_duration - total_kept_duration:.6f}"
 )
+
+# Add the segments back together
+
+#Create video/audio outputs for the segments
+number_of_segments = len(segments_to_keep)
+
+video_split = (
+    f"[0:v:0]split={number_of_segments}"
+    + "".join(f"[vsrc{i}]" for i in range(number_of_segments))
+)
+
+audio_split = (
+    f"[0:a:0]asplit={number_of_segments}"
+    + "".join(f"[asrc{i}]" for i in range(number_of_segments))
+)
+
+
+filter_parts = [video_split, audio_split]
+
+filter_parts = []
+
+for i, segment in enumerate(segments_to_keep):
+
+    start = segment["start"]
+    end = segment["end"]
+
+    video_filter = (
+    f"[vsrc{i}]trim=start={start}:end={end},"
+    f"setpts=PTS-STARTPTS[v{i}]"
+)
+
+    audio_filter = (
+        f"[asrc{i}]atrim=start={start}:end={end},"
+        f"asetpts=PTS-STARTPTS[a{i}]"
+    )
+
+    filter_parts.append(video_filter)
+    filter_parts.append(audio_filter)
+
+    concat_inputs = "".join(
+    f"[v{i}][a{i}]"
+    for i in range(number_of_segments)
+)
+
+concat_filter = (
+    f"{concat_inputs}"
+    f"concat=n={number_of_segments}:v=1:a=1"
+    f"[outv][outa]"
+)
+
+filter_parts.append(concat_filter)
+
+filter_complex = ";".join(filter_parts)
+
+output_path = video_path.with_name(
+    f"{video_path.stem}_edited.mp4"
+)
+
+command = [
+    "ffmpeg",
+    "-i", str(video_path),
+    "-filter_complex", filter_complex,
+    "-map", "[outv]",
+    "-map", "[outa]",
+    "-c:v", "libx264",
+    "-crf", "18",
+    "-preset", "medium",
+    "-c:a", "aac",
+    "-b:a", "192k",
+    str(output_path)
+]
+
+print(command)
+
+result = subprocess.run(command)
+
+if result.returncode != 0:
+    raise RuntimeError("Video export failed.")
+
+print(f"Edited video saved to: {output_path}")
